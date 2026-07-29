@@ -9,7 +9,7 @@ SCRIPT_UMASK=0122
 umask $SCRIPT_UMASK
 
 phead() {
-    echo "linux-router $VERSION (https://github.com/garywill/linux-router)"
+    echo "haxrouter $VERSION"
 }
 phead2() {
     echo "Released under LGPL, with no warranty. Use on your own risk."
@@ -101,10 +101,30 @@ Options:
     --mac-filter-accept     Location of WiFi hotspot MAC address filter list
                             (defaults to /etc/hostapd/hostapd.accept)
     --hostapd-debug <level> 1 or 2. Passes -d or -dd to hostapd
+    --hostapd-bin <path>    Use this hostapd-compatible executable instead of
+                            the selected backend's default
+    --hostapd-backend <name>
+                            Select hostapd backend: 'standard' (default) or
+                            'mana' (uses hostapd-mana from PATH)
     --isolate-clients       Disable wifi communication between clients
     --sta-timeout <seconds> Timeout to disconnect a no-signal client
     --no-haveged            Do not run haveged automatically when needed
     --hs20                  Enable Hotspot 2.0
+
+  WiFi Enterprise (WPA-EAP) options:
+    --enterprise, --eap     Use WPA-Enterprise authentication instead of a
+                            WPA-Personal passphrase
+    --radius-server <host[:port]>
+                            Authentication RADIUS server (default port: 1812)
+    --radius-secret-file <path>
+                            File containing the RADIUS shared secret. It must
+                            be readable only by root.
+    --local-eap             Run hostapd's built-in EAP server instead of using
+                            an external RADIUS server
+    --eap-user-file <path>  EAP user database for --local-eap
+    --ca-cert <path>        CA certificate for --local-eap
+    --server-cert <path>    Server certificate for --local-eap
+    --private-key <path>    Unencrypted private key for --local-eap
 
   WiFi 4 (802.11n) configs (2.4G/5GHz):  (default: not enable)
     --wifi4                 Enable IEEE 802.11n (HT, High Throughput)
@@ -225,10 +245,24 @@ define_global_variables(){
     FREQ_BAND=2.4
     NO_HAVEGED=0
     HOSTAPD_DEBUG_ARGS=
+    HOSTAPD_BACKEND=standard
+    HOSTAPD_BIN=
+    HOSTAPD=
     USE_PSK=0
     ISOLATE_CLIENTS=0
     QR=0 # show wifi qr
     STATIMEOUT=
+    ENTERPRISE=0
+    RADIUS_SERVER=
+    RADIUS_SECRET_FILE=
+    RADIUS_SERVER_HOST=
+    RADIUS_SERVER_PORT=1812
+    RADIUS_SECRET=
+    LOCAL_EAP=0
+    EAP_USER_FILE=
+    EAP_CA_CERT=
+    EAP_SERVER_CERT=
+    EAP_PRIVATE_KEY=
 
     #wifi4
     IEEE80211N=0
@@ -501,6 +535,62 @@ parse_user_options(){
                     printf "Error: argument for --hostapd-debug expected 1 or 2, got %s\n" "$1"
                     exit 1
                 fi
+                shift
+                ;;
+            --hostapd-bin)
+                shift
+                HOSTAPD_BIN="$1"
+                shift
+                ;;
+            --hostapd-backend)
+                shift
+                case "$1" in
+                    standard|mana)
+                        HOSTAPD_BACKEND="$1"
+                        ;;
+                    *)
+                        echo "Invalid --hostapd-backend value: $1 (expected standard or mana)" >&2
+                        exit 1
+                        ;;
+                esac
+                shift
+                ;;
+            --enterprise|--eap)
+                shift
+                ENTERPRISE=1
+                ;;
+            --radius-server)
+                shift
+                RADIUS_SERVER="$1"
+                shift
+                ;;
+            --radius-secret-file)
+                shift
+                RADIUS_SECRET_FILE="$1"
+                shift
+                ;;
+            --local-eap)
+                shift
+                LOCAL_EAP=1
+                ;;
+            --eap-user-file)
+                shift
+                EAP_USER_FILE="$1"
+                shift
+                ;;
+            --ca-cert)
+                shift
+                EAP_CA_CERT="$1"
+                shift
+                ;;
+            --server-cert)
+                shift
+                EAP_SERVER_CERT="$1"
+                shift
+                ;;
+            --private-key)
+                shift
+                EAP_PRIVATE_KEY="$1"
                 shift
                 ;;
             --psk)
@@ -1065,7 +1155,7 @@ firewalld_addto_tmptrustedzone() {
     OLD_FIREWALLD_ZONE="$(firewall-cmd --get-zone-of-interface=$SUBNET_IFACE 2>/dev/null)"
     [[ "$OLD_FIREWALLD_ZONE" == 'trusted' ]] && return
 
-    TMP_FIREWALLD_ZONE="trusted" # need subnet interface into this zone during linux-router working
+    TMP_FIREWALLD_ZONE="trusted" # need subnet interface in this zone while haxrouter is running
     if [[ -n "$OLD_FIREWALLD_ZONE" ]]; then
         echo "Getting $SUBNET_IFACE out from firewalld zone '$OLD_FIREWALLD_ZONE' ..."
         firewall-cmd --zone=$OLD_FIREWALLD_ZONE --remove-interface=$SUBNET_IFACE >/dev/null || die "Failed removing $SUBNET_IFACE from firewalld '$OLD_FIREWALLD_ZONE' zone"
@@ -1529,18 +1619,18 @@ init_trap(){
     trap "die" SIGUSR2
 }
 init_conf_dirs() {
-    mkdir -p "$TMPDIR" || die "Couldn't make linux-router's temporary dir"
+    mkdir -p "$TMPDIR" || die "Couldn't make haxrouter's temporary dir"
     chmod 755 "$TMPDIR" 2>/dev/null
-    cd "$TMPDIR" || die "Couldn't change directory to linux-router's temporary path"
+    cd "$TMPDIR" || die "Couldn't change directory to haxrouter's temporary path"
 
-    CONFDIR="$(mktemp -d $TMPDIR/lnxrouter.${TARGET_IFACE}.conf.XXXXXX)" || die "Instance couldn't make config dir" # config dir for one instance
+    CONFDIR="$(mktemp -d $TMPDIR/haxrouter.${TARGET_IFACE}.conf.XXXXXX)" || die "Instance couldn't make config dir" # config dir for one instance
     echo "Config dir: $CONFDIR"
     chmod 755 "$CONFDIR" || die "chmod config dir failed"
     echo $$ > "$CONFDIR/pid"
 
     touch "$CONFDIR/begin_$(date +"%Y-%m-%d_%H:%M:%S.%6N")"
 
-    COMMON_CONFDIR="$TMPDIR/lnxrouter_common.conf" # config dir for all instances
+    COMMON_CONFDIR="$TMPDIR/haxrouter_common.conf" # config dir for all instances
     mkdir -p "$COMMON_CONFDIR" || die "Failed creating common config dir"
 }
 
@@ -1548,7 +1638,7 @@ init_conf_dirs() {
 
 list_running_conf() {
     local x
-    for x in $TMPDIR/lnxrouter.*; do
+    for x in $TMPDIR/haxrouter.*; do
         if [[ -f $x/pid && -f $x/subn_iface && -d /proc/$(cat $x/pid) ]]; then
             echo "$x"
         fi
@@ -1702,7 +1792,7 @@ list_clients() { # passive mode. (use 'arp-scan' or 'netdiscover' if want active
 has_running_instance() {
     local PID x
 
-    for x in $TMPDIR/lnxrouter.*; do
+    for x in $TMPDIR/haxrouter.*; do
         if [[ -f $x/pid ]]; then
             PID=$(cat $x/pid)
             if [[ -d /proc/$PID ]]; then
@@ -1736,7 +1826,7 @@ send_stop() {
 
 ## ========================================================
 ## ========================================================
-# decide linux-router's global temporary path for all instances
+# decide haxrouter's global temporary path for all instances
 # this is different and should be before config-saving dir. The latter is for one instance
 decide_tmpdir(){
     local TMPD
@@ -1747,8 +1837,8 @@ decide_tmpdir(){
     else
         TMPD=/tmp
     fi
-    #TMPDIR=$TMPD/lnxrouter_tmp
-    echo "$TMPD/lnxrouter_tmp"
+    #TMPDIR=$TMPD/haxrouter_tmp
+    echo "$TMPD/haxrouter_tmp"
 }
 
 #======
@@ -1783,13 +1873,122 @@ check_other_functions(){
 daemonizing_check(){
     if [[ $DAEMONIZE -eq 1 && $RUNNING_AS_DAEMON -eq 0 ]]; then
         echo "Running as Daemon..."
-        # run a detached lnxrouter
+        # run a detached haxrouter
         RUNNING_AS_DAEMON=1 setsid "$0" "${ARGS[@]}" &
         exit 0
     fi
 }
 
 #============================
+check_hostapd_binary() {
+    local default_binary
+
+    if [[ -n "$HOSTAPD_BIN" ]]; then
+        if [[ ! -x "$HOSTAPD_BIN" ]]; then
+            echo "ERROR: --hostapd-bin must name an executable file: $HOSTAPD_BIN" >&2
+            exit 1
+        fi
+        HOSTAPD="$HOSTAPD_BIN"
+        return
+    fi
+
+    if [[ "$HOSTAPD_BACKEND" == mana ]]; then
+        default_binary=hostapd-mana
+    else
+        default_binary=hostapd
+    fi
+
+    HOSTAPD=$(command -v "$default_binary") || {
+        echo "ERROR: $default_binary not found (install it or use --hostapd-bin)" >&2
+        exit 1
+    }
+}
+
+check_readable_config_file() {
+    local label="$1"
+    local path="$2"
+
+    if [[ -z "$path" || ! -f "$path" || ! -r "$path" || "$path" == *$'\n'* ]]; then
+        echo "ERROR: $label must name a readable regular file" >&2
+        exit 1
+    fi
+}
+
+check_enterprise_settings() {
+    local mode
+
+    if [[ $ENTERPRISE -eq 0 && ( $LOCAL_EAP -eq 1 || -n "$EAP_USER_FILE" || -n "$EAP_CA_CERT" || -n "$EAP_SERVER_CERT" || -n "$EAP_PRIVATE_KEY" ) ]]; then
+        echo "ERROR: Local EAP options require --enterprise" >&2
+        exit 1
+    fi
+
+    [[ $ENTERPRISE -eq 1 ]] || return
+
+    if [[ -n "$PASSPHRASE" || $USE_PSK -eq 1 ]]; then
+        echo "ERROR: --enterprise cannot be used with --password or --psk" >&2
+        exit 1
+    fi
+
+    if [[ $LOCAL_EAP -eq 1 ]]; then
+        if [[ -n "$RADIUS_SERVER" || -n "$RADIUS_SECRET_FILE" ]]; then
+            echo "ERROR: --local-eap cannot be combined with external RADIUS options" >&2
+            exit 1
+        fi
+        check_readable_config_file "--eap-user-file" "$EAP_USER_FILE"
+        check_readable_config_file "--ca-cert" "$EAP_CA_CERT"
+        check_readable_config_file "--server-cert" "$EAP_SERVER_CERT"
+        check_readable_config_file "--private-key" "$EAP_PRIVATE_KEY"
+        return
+    fi
+
+    if [[ -n "$EAP_USER_FILE" || -n "$EAP_CA_CERT" || -n "$EAP_SERVER_CERT" || -n "$EAP_PRIVATE_KEY" ]]; then
+        echo "ERROR: EAP server file options require --local-eap" >&2
+        exit 1
+    fi
+
+    if [[ -z "$RADIUS_SERVER" || -z "$RADIUS_SECRET_FILE" ]]; then
+        echo "ERROR: --enterprise requires --radius-server and --radius-secret-file" >&2
+        exit 1
+    fi
+
+    if [[ "$RADIUS_SERVER" =~ ^\[([0-9A-Fa-f:]+)\](:([0-9]+))?$ ]]; then
+        RADIUS_SERVER_HOST="${BASH_REMATCH[1]}"
+        [[ -n "${BASH_REMATCH[3]}" ]] && RADIUS_SERVER_PORT="${BASH_REMATCH[3]}"
+    elif [[ "$RADIUS_SERVER" =~ ^([^:[:space:]]+):([0-9]+)$ ]]; then
+        RADIUS_SERVER_HOST="${BASH_REMATCH[1]}"
+        RADIUS_SERVER_PORT="${BASH_REMATCH[2]}"
+    elif [[ "$RADIUS_SERVER" =~ ^[^:[:space:]]+$ ]]; then
+        RADIUS_SERVER_HOST="$RADIUS_SERVER"
+    else
+        echo "ERROR: Invalid --radius-server value: $RADIUS_SERVER" >&2
+        exit 1
+    fi
+
+    if [[ ! "$RADIUS_SERVER_PORT" =~ ^[0-9]+$ ]] || (( 10#$RADIUS_SERVER_PORT < 1 || 10#$RADIUS_SERVER_PORT > 65535 )); then
+        echo "ERROR: RADIUS port must be between 1 and 65535" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$RADIUS_SECRET_FILE" || ! -r "$RADIUS_SECRET_FILE" ]]; then
+        echo "ERROR: Cannot read RADIUS secret file: $RADIUS_SECRET_FILE" >&2
+        exit 1
+    fi
+    mode=$(stat -c '%a' "$RADIUS_SECRET_FILE" 2>/dev/null) || mode=$(stat -f '%Lp' "$RADIUS_SECRET_FILE" 2>/dev/null) || {
+        echo "ERROR: Cannot read permissions of RADIUS secret file: $RADIUS_SECRET_FILE" >&2
+        exit 1
+    }
+    if (( (8#$mode & 077) != 0 )); then
+        echo "ERROR: RADIUS secret file must not be readable by group or others: $RADIUS_SECRET_FILE" >&2
+        exit 1
+    fi
+
+    RADIUS_SECRET=$(<"$RADIUS_SECRET_FILE")
+    if [[ -z "$RADIUS_SECRET" || "$RADIUS_SECRET" == *$'\n'* ]]; then
+        echo "ERROR: RADIUS secret file must contain one non-empty line" >&2
+        exit 1
+    fi
+}
+
 check_wifi_settings() {
     PHY="$(get_interface_phy_device "$WIFI_IFACE")"
     if [[ -z "$PHY" ]]; then
@@ -1834,10 +2033,7 @@ check_wifi_settings() {
         fi
     fi
 
-    HOSTAPD=$(command -v hostapd) || {
-        echo "ERROR: hostapd not found" >&2
-        exit 1
-    }
+    check_hostapd_binary
 
     if [[ $(get_adapter_kernel_module "${WIFI_IFACE}") =~ ^(8192[cd][ue]|8723a[sue])$ ]]; then
         if ! strings "$HOSTAPD" | grep -m1 rtl871xdrv > /dev/null 2>&1; then
@@ -1856,15 +2052,17 @@ check_wifi_settings() {
         exit 1
     fi
 
-    if [[ $USE_PSK -eq 0 ]]; then
+    if [[ $ENTERPRISE -eq 0 && $USE_PSK -eq 0 ]]; then
         if [[ ${#PASSPHRASE} -gt 0 && ${#PASSPHRASE} -lt 8 ]] || [[ ${#PASSPHRASE} -gt 63 ]]; then
             echo "ERROR: Invalid passphrase length ${#PASSPHRASE} (expected 8..63)" >&2
             exit 1
         fi
-    elif [[ ${#PASSPHRASE} -gt 0 && ${#PASSPHRASE} -ne 64 ]]; then
+    elif [[ $ENTERPRISE -eq 0 && ${#PASSPHRASE} -gt 0 && ${#PASSPHRASE} -ne 64 ]]; then
         echo "ERROR: Invalid pre-shared-key length ${#PASSPHRASE} (expected 64)" >&2
         exit 1
     fi
+
+    check_enterprise_settings
 
     if [[ $(get_adapter_kernel_module "${WIFI_IFACE}") =~ ^rtl[0-9].*$ ]]; then
         if [[ $WPA1_ENABLE == '1' ]]; then
@@ -1875,7 +2073,7 @@ check_wifi_settings() {
 
     if [[ -z $VIRT_NAME ]]; then
         if [[ ${#WIFI_IFACE} -gt 13 ]]; then
-            echo "WARN: $WIFI_IFACE has ${#WIFI_IFACE} characters which might be too long. If AP doesn't work, see --virt-name and https://github.com/garywill/linux-router/issues/44" >&2
+            echo "WARN: $WIFI_IFACE has ${#WIFI_IFACE} characters which might be too long. If AP doesn't work, try --virt-name with a shorter interface name" >&2
         fi
     elif [[ ${#VIRT_NAME} -gt 15 ]]; then
         echo "WARN: option --virt-name $VIRT_NAME has ${#VIRT_NAME} characters which might be too long, consider making it shorter in case of errors" >&2
@@ -2018,11 +2216,7 @@ dealwith_mac() {
     fi
 }
 
-write_hostapd_conf() {
-    local WPA_VERSION
-    local WPA_KEYMGMT
-    local WPA_KEY_TYPE
-
+write_hostapd_common_conf() {
     cat <<- EOF > "$CONFDIR/hostapd.conf"
 		beacon_int=100
 		ssid=${SSID}
@@ -2034,6 +2228,72 @@ write_hostapd_conf() {
 		ignore_broadcast_ssid=$HIDDEN
 		ap_isolate=$ISOLATE_CLIENTS
 	EOF
+}
+
+write_hostapd_personal_security() {
+    local WPA_VERSION
+    local WPA_KEYMGMT
+    local WPA_KEY_TYPE
+
+    WPA_VERSION=0    # 1 means wpa1. 2 means wpa2. 3 means wpa2+1
+    WPA_KEYMGMT=""   # WPA-PSK means wpa2 or wpa1. SAE means wpa3
+    if [[ $WPA1_ENABLE -eq 1 ]]; then
+        WPA_VERSION=$(($WPA_VERSION + 1))
+    fi
+    if [[ $WPA2_ENABLE -eq 1 || $WPA3_ENABLE -eq 1 ]]; then
+        WPA_VERSION=$(($WPA_VERSION + 2))
+    fi
+    if [[ $WPA1_ENABLE -eq 1 || $WPA2_ENABLE -eq 1 ]]; then
+        WPA_KEYMGMT+="WPA-PSK"
+    fi
+    if [[ $WPA3_ENABLE -eq 1 ]]; then
+        [[ ! -z "$WPA_KEYMGMT" ]] && WPA_KEYMGMT+=" "
+        WPA_KEYMGMT+="SAE"
+    fi
+    if [[ $USE_PSK -eq 0 ]]; then
+        WPA_KEY_TYPE=passphrase
+    else
+        WPA_KEY_TYPE=psk
+    fi
+    cat <<- EOF >> "$CONFDIR/hostapd.conf"
+		wpa=${WPA_VERSION}
+		wpa_${WPA_KEY_TYPE}=${PASSPHRASE}
+		wpa_key_mgmt=${WPA_KEYMGMT}
+		wpa_pairwise=CCMP
+		rsn_pairwise=CCMP
+	EOF
+}
+
+write_hostapd_enterprise_security() {
+    cat <<- EOF >> "$CONFDIR/hostapd.conf"
+		wpa=2
+		wpa_key_mgmt=WPA-EAP
+		ieee8021x=1
+		auth_server_addr=${RADIUS_SERVER_HOST}
+		auth_server_port=${RADIUS_SERVER_PORT}
+		auth_server_shared_secret=${RADIUS_SECRET}
+		wpa_pairwise=CCMP
+		rsn_pairwise=CCMP
+	EOF
+}
+
+write_hostapd_local_eap_security() {
+    cat <<- EOF >> "$CONFDIR/hostapd.conf"
+		wpa=2
+		wpa_key_mgmt=WPA-EAP
+		ieee8021x=1
+		eap_server=1
+		eap_user_file=${EAP_USER_FILE}
+		ca_cert=${EAP_CA_CERT}
+		server_cert=${EAP_SERVER_CERT}
+		private_key=${EAP_PRIVATE_KEY}
+		wpa_pairwise=CCMP
+		rsn_pairwise=CCMP
+	EOF
+}
+
+write_hostapd_conf() {
+    write_hostapd_common_conf
 
     if [[ -n "$COUNTRY" ]]; then
         cat <<- EOF >> "$CONFDIR/hostapd.conf"
@@ -2055,34 +2315,14 @@ write_hostapd_conf() {
 		EOF
     fi
 
-    if [[ -n "$PASSPHRASE" ]]; then
-        WPA_VERSION=0    # 1 means wpa1. 2 means wpa2. 3 means wpa2+1
-        WPA_KEYMGMT=""   # WPA-PSK means wpa2 or wpa1. SAE means wpa3
-        if [[ $WPA1_ENABLE -eq 1 ]]; then
-            WPA_VERSION=$(($WPA_VERSION + 1))
-        fi
-        if [[ $WPA2_ENABLE -eq 1 || $WPA3_ENABLE -eq 1 ]]; then
-            WPA_VERSION=$(($WPA_VERSION + 2))
-        fi
-        if [[ $WPA1_ENABLE -eq 1 || $WPA2_ENABLE -eq 1 ]]; then
-            WPA_KEYMGMT+="WPA-PSK"
-        fi
-        if [[ $WPA3_ENABLE -eq 1 ]]; then
-            [[ ! -z "$WPA_KEYMGMT" ]] && WPA_KEYMGMT+=" "
-            WPA_KEYMGMT+="SAE"
-        fi
-        if [[ $USE_PSK -eq 0 ]]; then
-            WPA_KEY_TYPE=passphrase
+    if [[ $ENTERPRISE -eq 1 ]]; then
+        if [[ $LOCAL_EAP -eq 1 ]]; then
+            write_hostapd_local_eap_security
         else
-            WPA_KEY_TYPE=psk
+            write_hostapd_enterprise_security
         fi
-        cat <<- EOF >> "$CONFDIR/hostapd.conf"
-			wpa=${WPA_VERSION}
-			wpa_${WPA_KEY_TYPE}=${PASSPHRASE}
-			wpa_key_mgmt=${WPA_KEYMGMT}
-			wpa_pairwise=CCMP
-			rsn_pairwise=CCMP
-		EOF
+    elif [[ -n "$PASSPHRASE" ]]; then
+        write_hostapd_personal_security
     else
         echo "WARN: WiFi is not protected by password" >&2
     fi
@@ -2279,19 +2519,20 @@ run_wifi_ap_processes() {
     #echo "hostapd command-line interface: hostapd_cli -p $CONFDIR/hostapd_ctrl"
     # start hostapd (use stdbuf when available for no delayed output in programs that redirect stdout)
     STDBUF_PATH=$(command -v stdbuf)
-    if [ $? -eq 0 ]; then
-        STDBUF_PATH=$STDBUF_PATH" -oL"
-    fi
     echo
-    echo "Starting hostapd"
+    echo "Starting ${HOSTAPD}"
 
     if COMPLAIN_CMD="$(command -v aa-complain || command -v complain)"; then
         echo "Setting hostapd to AppArmor complain mode..."
-        "$COMPLAIN_CMD" hostapd
+        "$COMPLAIN_CMD" "$(basename "$HOSTAPD")"
     fi
 
     # hostapd '-P' works only when use '-B' (run in background)
-    $STDBUF_PATH hostapd $HOSTAPD_DEBUG_ARGS -P "$CONFDIR/hostapd.pid" "$CONFDIR/hostapd.conf"  &
+    if [[ -n "$STDBUF_PATH" ]]; then
+        "$STDBUF_PATH" -oL "$HOSTAPD" $HOSTAPD_DEBUG_ARGS -P "$CONFDIR/hostapd.pid" "$CONFDIR/hostapd.conf" &
+    else
+        "$HOSTAPD" $HOSTAPD_DEBUG_ARGS -P "$CONFDIR/hostapd.pid" "$CONFDIR/hostapd.conf" &
+    fi
     HOSTAPD_PID=$!
     echo "$HOSTAPD_PID" > "$CONFDIR/hostapd.pid"
     echo "hostapd PID: $HOSTAPD_PID"
@@ -2522,7 +2763,7 @@ is_firewalld_running && firewalld_addto_tmptrustedzone
 
 
 echo
-echo "== Setting up completed, now linux-router should be working =="
+echo "== Setting up completed, now haxrouter should be working =="
 
 #============================================================
 #============================================================

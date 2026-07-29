@@ -1,4 +1,4 @@
-# Linux-router
+# haxrouter
 
 Set Linux as router in one command. Able to provide Internet, or create WiFi hotspot. Support transparent proxy (redsocks). Also useful for routing VM/containers.
 
@@ -68,13 +68,13 @@ Internet----(eth0/wlan0)-Linux-(virtual interface)-----VM/container
 
 ## Install
 
-1-file-script. Release on [Linux-router repo on Github](https://github.com/garywill/linux-router). Just download and run the bash script (meet the dependencies). In this case use without installation.
+`haxrouter` is a fork of [linux-router](https://github.com/garywill/linux-router). It is a one-file script: download it, meet the dependencies, and run it directly.
 
 I'm currently not packaging for any distro. If you do, open a PR and add the link (can be with a version badge) to list here
 
 | Linux distro |                                                                                                            |
 | ------------ | ---------------------------------------------------------------------------------------------------------- |
-| Any          | download [1-file-script](https://raw.githubusercontent.com/garywill/linux-router/master/lnxrouter) and run without installation |
+| Any          | download this repository's `haxrouter` script and run without installation |
 
 ### Dependencies
 
@@ -96,7 +96,7 @@ I'm currently not packaging for any distro. If you do, open a PR and add the lin
 ### Provide Internet to an interface
 
 ```bash
-sudo lnxrouter -i eth1
+sudo haxrouter -i eth1
 ```
 
 no matter which interface (other than `eth1`) you're getting Internet from.
@@ -104,10 +104,47 @@ no matter which interface (other than `eth1`) you're getting Internet from.
 ### Create WiFi hotspot
 
 ```bash
-sudo lnxrouter --ap wlan0 MyAccessPoint -p MyPassPhrase
+sudo haxrouter --ap wlan0 MyAccessPoint -p MyPassPhrase
 ```
 
 no matter which interface you're getting Internet from (even from `wlan0`). Will create virtual Interface `x0wlan0` for hotspot.
+
+### Create a WPA-Enterprise hotspot with external RADIUS
+
+Create a root-only file containing the RADIUS shared secret (one non-empty line, mode `600`), then configure the AP with its RADIUS server:
+
+```bash
+sudo haxrouter --ap wlan0 CorpNet --enterprise \
+  --radius-server radius.corp.example:1812 \
+  --radius-secret-file /etc/haxrouter/radius.secret
+```
+
+`--enterprise` cannot be combined with `--password` or `--psk`. An IPv6 RADIUS address must be bracketed, for example `[2001:db8::10]:1812`.
+
+### Create a WPA-Enterprise hotspot with local EAP
+
+For a self-contained test or lab deployment, hostapd can provide the EAP server itself. Supply its EAP user database, CA certificate, server certificate, and an unencrypted private key:
+
+```bash
+sudo haxrouter --ap wlan0 LabNet --enterprise --local-eap \
+  --eap-user-file /etc/haxrouter/eap.users \
+  --ca-cert /etc/haxrouter/ca.pem \
+  --server-cert /etc/haxrouter/server.pem \
+  --private-key /etc/haxrouter/server.key
+```
+
+Local EAP and external-RADIUS options are mutually exclusive. The exact EAP methods and user-file syntax are determined by the installed hostapd build.
+
+### Select a hostapd-compatible backend
+
+The default backend is the `hostapd` found in `PATH`. To use a separately installed compatible binary, provide either its path or the MANA backend selector:
+
+```bash
+sudo haxrouter --hostapd-bin /opt/hostapd/bin/hostapd --ap wlan0 CorpNet
+sudo haxrouter --hostapd-backend mana --ap wlan0 CorpNet
+```
+
+The `mana` selector requires `hostapd-mana` in `PATH`; it does not enable any MANA-specific behavior by itself.
 
 ### Provide an interface's Internet to another interface
 
@@ -116,7 +153,7 @@ Clients access Internet through only `isp5`
 <details>
 
 ```bash
-sudo lnxrouter -i eth1 -o isp5  --no-dns  --dhcp-dns 1.1.1.1  -6 --dhcp-dns6 [2606:4700:4700::1111]
+sudo haxrouter -i eth1 -o isp5  --no-dns  --dhcp-dns 1.1.1.1  -6 --dhcp-dns6 [2606:4700:4700::1111]
 ```
 
 > In this case of usage, it's recommended to:
@@ -131,11 +168,11 @@ sudo lnxrouter -i eth1 -o isp5  --no-dns  --dhcp-dns 1.1.1.1  -6 --dhcp-dns6 [26
 <details>
 
 ```bash
-sudo lnxrouter -n -i eth1
+sudo haxrouter -n -i eth1
 ```
 
 ```bash
-sudo lnxrouter -n --ap wlan0 MyAccessPoint -p MyPassPhrase
+sudo haxrouter -n --ap wlan0 MyAccessPoint -p MyPassPhrase
 ```
 
 </details>
@@ -160,7 +197,7 @@ lxc.network.hwaddr = xx:xx:xx:xx:xx:xx
 ```
 
 ```bash
-sudo lnxrouter -i lxcbr5
+sudo haxrouter -i lxcbr5
 ```
 
 </details>
@@ -172,7 +209,7 @@ All clients' Internet traffic go through, for example, Tor (notice this example 
 <details>
 
 ```bash
-sudo lnxrouter -i eth1 --tp 9040 --dns 9053 -g 192.168.55.1 -6 --p6 fd00:5:6:7::
+sudo haxrouter -i eth1 --tp 9040 --dns 9053 -g 192.168.55.1 -6 --p6 fd00:5:6:7::
 ```
 
 In `torrc`
@@ -186,7 +223,7 @@ DNSPort [fd00:5:6:7::1]:9053
 
 > **Warn**: Tor's anonymity relies on a purpose-made browser. Using Tor like this (sharing Tor's network to LAN clients) will NOT ensure anonymity.
 > 
-> Although we use Tor as example here, Linux-router does NOT ensure nor is NOT aiming at anonymity.
+> Although we use Tor as example here, haxrouter does NOT ensure nor aim at anonymity.
 
 </details>
 
@@ -197,7 +234,7 @@ To not give our infomation to clients. Clients can still access Internet.
 <details>
 
 ```bash
-sudo lnxrouter -i eth1 \
+sudo haxrouter -i eth1 \
     --tp 9040 --dns 9053 \
     --random-mac \
     --ban-priv \
@@ -206,7 +243,7 @@ sudo lnxrouter -i eth1 \
 
 </details>
 
-> Linux-router comes with no warranty. Use on your own risk
+> haxrouter comes with no warranty. Use at your own risk.
 
 ### Use as transparent proxy for LXD
 
@@ -239,7 +276,7 @@ lxc profile add <container> profile5
 ```
 
 ```bash
-sudo lnxrouter -i lxdbr5 --tp 9040 --dns 9053
+sudo haxrouter -i lxdbr5 --tp 9040 --dns 9053
 ```
 
 To remove that new profile from container
@@ -271,7 +308,7 @@ lxc config device remove <container> eth0
 In VirtualBox's global settings, create a host-only network `vboxnet5` with DHCP disabled.
 
 ```bash
-sudo lnxrouter -i vboxnet5 --tp 9040 --dns 9053
+sudo haxrouter -i vboxnet5 --tp 9040 --dns 9053
 ```
 
 </details>
@@ -287,7 +324,7 @@ sudo brctl addbr firejail5
 ```
 
 ```bash
-sudo lnxrouter -i firejail5 -g 192.168.55.1 --tp 9040 --dns 9053 
+sudo haxrouter -i firejail5 -g 192.168.55.1 --tp 9040 --dns 9053
 firejail --net=firejail5 --dns=192.168.55.1 --blacklist=/var/run/nscd
 ```
 
@@ -302,7 +339,7 @@ nscd is domain name cache service, which shouldn't be accessed from in jail here
 <details>
 
 ```
-Usage: lnxrouter <options>
+Usage: haxrouter <options>
 
 Options:
     -h, --help              Show this help
@@ -384,10 +421,30 @@ Options:
     --mac-filter-accept     Location of WiFi hotspot MAC address filter list
                             (defaults to /etc/hostapd/hostapd.accept)
     --hostapd-debug <level> 1 or 2. Passes -d or -dd to hostapd
+    --hostapd-bin <path>    Use this hostapd-compatible executable instead of
+                            the selected backend's default
+    --hostapd-backend <name>
+                            Select hostapd backend: 'standard' (default) or
+                            'mana' (uses hostapd-mana from PATH)
     --isolate-clients       Disable wifi communication between clients
     --sta-timeout <seconds> Timeout to disconnect a no-signal client
     --no-haveged            Do not run haveged automatically when needed
     --hs20                  Enable Hotspot 2.0
+
+  WiFi Enterprise (WPA-EAP) options:
+    --enterprise, --eap     Use WPA-Enterprise authentication instead of a
+                            WPA-Personal passphrase
+    --radius-server <host[:port]>
+                            Authentication RADIUS server (default port: 1812)
+    --radius-secret-file <path>
+                            File containing the RADIUS shared secret. It must
+                            be readable only by root.
+    --local-eap             Run hostapd's built-in EAP server instead of using
+                            an external RADIUS server
+    --eap-user-file <path>  EAP user database for --local-eap
+    --ca-cert <path>        CA certificate for --local-eap
+    --server-cert <path>    Server certificate for --local-eap
+    --private-key <path>    Unencrypted private key for --local-eap
 
   WiFi 4 (802.11n) configs (2.4G/5GHz):  (default: not enable)
     --wifi4                 Enable IEEE 802.11n (HT, High Throughput)
@@ -449,15 +506,15 @@ Options:
 
 ### Take care of concurrency
 
-Linux-router script is home-made, not enterprise-level.
+haxrouter is a lightweight script, not enterprise-level network-management software.
 
-- You can run multiple linux-router instances and they work simultaneous, as long as you start/stop **one by one**, not all at once. We **can't ensure** its locks covering 100% race condition edge cases.
+- You can run multiple haxrouter instances simultaneously, as long as you start/stop **one by one**. We **can't ensure** its locks cover 100% of race-condition edge cases.
 
-- Use it after the system has fully booted. When you’re manually (re)starting/stopping some network-related services, stop linux-router first, otherwise those services (flushing iptables or some) may break linux-router's setup. 
+- Use it after the system has fully booted. When you’re manually (re)starting/stopping network-related services, stop haxrouter first; otherwise those services may break haxrouter's setup.
 
 ### What changes are done to Linux system
 
-On exit of a linux-router instance, script **will do cleanup**, i.e. undo most changes to system. Though, **some** changes (if needed) will **not** be undone, which are:
+On exit, haxrouter **will do cleanup**, i.e. undo most changes to the system. Though, **some** changes (if needed) will **not** be undone, which are:
 
 1. `/proc/sys/net/ipv4/ip_forward = 1` and `/proc/sys/net/ipv6/conf/all/forwarding = 1`
 2. dnsmasq in Apparmor complain mode
@@ -488,12 +545,12 @@ Visit [**my homepage** 🏡](https://garywill.github.io) to see **more tools and
 
 ## License
 
-linux-router is LGPL licensed
+haxrouter is LGPL licensed
 
 <details>
 
 ```
-linux-router
+haxrouter
 Copyright (C) 2018  garywill
 
 This library is free software; you can redistribute it and/or
@@ -544,5 +601,3 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 </details>
-
-
