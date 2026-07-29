@@ -1,13 +1,13 @@
-# haxrouter
+# haxrouter 🕶️📡
 
-Set Linux as router in one command. Able to provide Internet, or create WiFi hotspot. Support transparent proxy (redsocks). Also useful for routing VM/containers.
+An offensive Wi‑Fi tool and modern replacement for [`berate_ap`](https://github.com/sensepost/berate_ap), built as a fork of `linux-router`—for when your rogue AP needs a little more `sudo` energy. 🧑‍💻⚡ haxrouter creates routed access points with WPA-Enterprise support for external RADIUS or hostapd's local EAP server, and can use a separately installed `hostapd-mana`-compatible backend.
 
-It wraps `iptables`, `dnsmasq` etc. stuff. Use in one command, restore in one command or by `control-c` (or even by closing terminal window).
+It also retains linux-router's one-command routed-network setup for wired interfaces, ordinary Wi-Fi hotspots, VMs, and containers. It wraps `iptables`, `dnsmasq`, and `hostapd`, then cleans up on exit or `Ctrl-C`.
 
-[More tools and projects 🛠️](https://garywill.github.io) | [🍻 Buy me a coffee ❤️](https://github.com/garywill/receiving/blob/master/receiving_methods.md)
+> **⚠️ Authorized use only:** haxrouter is intended for authorized security assessments, labs, and training environments. **🛜 Fork and support notice:** haxrouter is maintained separately from upstream. Use this repository's issue tracker and pull requests for haxrouter support. References to Garywill, linux-router, or upstream support links are attribution and upstream resources—not haxrouter support channels.
 
 
-## Features
+## Features 🧰
 
 Basic features:
 
@@ -24,6 +24,8 @@ Basic features:
   - Channel selecting
   - Choose encryptions: WPA2/WPA, WPA2, WPA, No encryption
   - Create AP on the same interface you are getting Internet (Need hardware support. Usually require same channel)
+  - WPA-Enterprise with external RADIUS or a local EAP server
+  - Select a standard or `hostapd-mana`-compatible hostapd backend
 - Transparent proxy (redsocks)
 - Transparent DNS proxy (hijack port 53 packets)
 - Detect and prevent interference from following Linux system daemons:
@@ -91,7 +93,7 @@ I'm currently not packaging for any distro. If you do, open a PR and add the lin
 
 
 
-## Usage
+## Usage 💻
 
 ### Provide Internet to an interface
 
@@ -502,7 +504,7 @@ Options:
 
 </details>
 
-## System admins should know
+## System admins should know ⚠️
 
 ### Take care of concurrency
 
@@ -523,21 +525,11 @@ On exit, haxrouter **will do cleanup**, i.e. undo most changes to the system. Th
 5. The wifi device which is used to create hotspot is `rfkill unblock`ed
 6. WiFi country code, if user assigns
 
-## Meet contributor(s) and become one of them
+## Contributing and upstream attribution 🤝
 
-Visit [**my homepage** 🏡](https://garywill.github.io) to see **more tools and projects** 🛠️.
+For haxrouter bugs, feature requests, and pull requests, use **this fork's** repository. Do not open haxrouter issues with the upstream maintainers.
 
-> [❤️ Buy me a coffee](https://github.com/garywill/receiving/blob/master/receiving_methods.md) , this project took me lots of time! ([❤️ 扫码领红包并打赏一个!](https://github.com/garywill/receiving/blob/master/receiving_methods.md))
-> 
-> 🥂 ( ^\_^) o自自o (^_^ ) 🍻
-
-🤝 Bisides, thank [create_ap](https://github.com/oblique/create_ap) by [oblique](https://github.com/oblique). This script was forked from create\_ap. Now they are quite different. 🤝 Also thank those people who contributed to that project.
-
-👨‍💻 You can be contributor, too! 
-
-- 🍃 There're some TO-DOs listed, in both [readme TODO](#todo) and [in the code file](https://github.com/garywill/linux-router/search?q=TODO&type=code)
-- 🍃 Also some [unfulfilled enhancements in the Issues](https://github.com/garywill/linux-router/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
-- 🙋‍♂️ Contributions are not limited to coding. There're [some posts and questions](https://github.com/garywill/linux-router/issues) that need more people to answer
+haxrouter is forked from [linux-router](https://github.com/garywill/linux-router), which in turn credits [create_ap](https://github.com/oblique/create_ap). The upstream project, its [issues](https://github.com/garywill/linux-router/issues), and Garywill's [personal project/support links](https://garywill.github.io) are provided for attribution and upstream reference only; they do not support or maintain this fork.
 
 ## TODO
 - WPA3
